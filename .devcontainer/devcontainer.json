@@ -1,0 +1,51 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/universal
+{
+	"name": "Default Linux Universal",
+	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
+	"image": "mcr.microsoft.com/devcontainers/universal:2-linux",
+	"portsAttributes": {
+		"3000": {
+			"label": "grafana"
+		},
+		"5001": {
+			"label": "model-registry"
+		},
+		"8080": {
+			"label": "dev-env"
+		},
+		"8085": {
+			"label": "message-broker"
+		},
+		"9090": {
+			"label": "prometheus"
+		},
+		"9102": {
+			"label": "statsd"
+		}
+	},
+	"hostRequirements": {
+		"cpus": 4,
+		"memory": "16gb",
+		"storage": "32gb"
+	}
+	// unused because it was confusing and opened many ports: plugin to show html exercises in vscode
+	//,
+	// "customizations": {
+	// 	"vscode": {
+	// 		"extensions": [
+	// 			"ms-vscode.live-server"
+	// 		]
+	// 	}
+	// }
+	// Features to add to the dev container. More info: https://containers.dev/features.
+	// "features": {},
+	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	// "forwardPorts": [],
+	// Use 'postCreateCommand' to run commands after the container is created.
+	// "postCreateCommand": [],	
+	// Configure tool-specific properties.
+	// "customizations": {},
+	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
+	// "remoteUser": "root"
+}

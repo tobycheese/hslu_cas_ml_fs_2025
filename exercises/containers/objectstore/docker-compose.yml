@@ -1,0 +1,16 @@
+services:
+  objectstore:
+    container_name: objectstore
+    image: minio/minio
+    command: server --address "0.0.0.0:9000" /data
+    hostname: objectstore
+    expose:
+      - "9000"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ADMIN}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET}
+    volumes:
+      - ../../s3_data:/data
+    networks:
+      - development
+      - production

@@ -1,0 +1,18 @@
+services:
+   development_env:
+      container_name: development_env
+      image: ghcr.io/tobycheese/development_env:latest
+      build: .
+      environment:
+        - FSSPEC_S3_KEY=${MINIO_ADMIN}
+        - FSSPEC_S3_SECRET=${MINIO_SECRET}
+        - FSSPEC_S3_ENDPOINT_URL=${MINIO_ENDPOINT}
+        - GIT_PYTHON_REFRESH=quiet
+#        - MLFLOW_TRACKING_URI=http://model-registry:5001
+      ports:
+         - 127.0.0.1:8080:8888
+      volumes:
+         - ../../notebooks:/notebooks
+      networks:
+         - development
+         - production

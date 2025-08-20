@@ -1,0 +1,19 @@
+services:
+  model-registry:
+    container_name: model-registry
+    image: ghcr.io/tobycheese/mlflow:with_boto3
+    build: .
+    command: mlflow server --host 0.0.0.0 --port 5001 --artifacts-destination s3://artifacts --backend-store-uri sqlite:///metadata/metadata.sqlite
+    ports:
+      - 127.0.0.1:5001:5001 # 5000 (mlflow default port) is taken by airplay on macos
+    depends_on:
+      - objectstore
+    environment:
+      - AWS_ACCESS_KEY_ID=${MINIO_ADMIN}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_SECRET}
+      - MLFLOW_S3_ENDPOINT_URL=${MINIO_ENDPOINT}
+    volumes:
+      - ../../mlflow_metadata:/metadata
+    networks:
+      - development
+      - production

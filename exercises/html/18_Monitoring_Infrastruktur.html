@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>18_Monitoring_Infrastruktur</title>
+
+    <link rel="stylesheet" href="css/bulma.min.css">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/default.min.css">
+    <script src="css/highlight.min.js"></script>
+    <script>hljs.highlightAll();</script>
+    <script>
+        // prevent annoying text selection when clicking to open solutions, but allow normal mouse selection
+        document.addEventListener('mousedown', function (event) {
+            if (event.detail > 1) {
+                event.preventDefault();
+            }
+        }, false);
+    </script>
+</head>
+
+<body>
+    <section class="section">
+        <div class="container">
+            <div class="columns is-centered">
+                <div class="column is-10 content-column">
+
+
+                    <h1 class="title is-1">Drift Detection Infrastructure</h1>
+
+                    <div class="block">
+                        In dieser Übung setzen wir den Monitoring Dienst auf und lernen diesen kennen. Wird verwenden
+                        dazu <a href="https://prometheus.io/docs/introduction/overview/">Prometheus</a> mit dem <a
+                            href="https://github.com/prometheus/statsd_exporter">Statsd Exporter</a> und <a
+                            href="https://grafana.com/">Grafana</a>.
+                    </div>
+
+                    <div class="block">
+                        Diese Tools werden bereits von vielen Organisationen für das Sammeln von Metriken, das
+                        Darstellen deren Verlauf und für die Alarmierung verwendet.
+                    </div>
+
+                    <h1 class="title is-1">Vorbereitung</h1>
+
+                    <div class="block">
+                        Speichere alle deine offenen Notebooks. Stoppe alle Container, indem du dich ins Top-Level
+                        Verzeichnis der Übungen begibst (dort, wo das File <em>docker-compose.yml</em> liegt) und
+                        <em>docker compose down</em> ausführst. Wenn du die Container im Vordergrund laufen hast, kannst
+                        du in diesem Terminal die Prozesse mit <em>ctrl-c</em> stoppen.
+                    </div>
+
+                    <div class="block">
+                        Kommentiere im Top-Level Compose File <em>docker-compose.yml</em> den Monitoring Dienst ein.
+                    </div>
+
+                    <div class="block">
+                        Starte alle Container wieder.
+                    </div>
+
+                    <h1 class="title is-1">Übungen</h1>
+
+                    <h3 class="title is-3"> Architektur</h3>
+
+                    <div class="block">
+                        Wir werden die folgenden Architektur aufsetzen:
+                    </div>
+
+                    <img src="img/monitoring_01.png" width="70%">
+
+                    <div class="block">
+                        Dabei ist es wichtig, den Einsatzzweck der einzelnen Komponenten zu verstehen.
+                    </div>
+
+                    <div class="block">
+                        <ul>
+                            <li><strong>Prometheus</strong>: Sammelt und speichert Datenpunkte und bietet mit PromQL
+                                eine eigene Sprache, um diese zu analysieren. Prometheus pullt Metriken immer aktiv, was
+                                schön ist für Services, welche dann ihre Metriken einfach auf einer Webseite in dem von
+                                Prometheus vorgegebenen Format anbieten können.</li>
+                            <li><strong>Grafana</strong>: Holt Daten von verschiedenen Quellen und stellt diese grafisch
+                                dar. Kann Alarme aussenden.</li>
+                            <li><strong>Unsere Batch- und Streaming Pipelines</strong>: Berechnen und pushen Metriken
+                                aktiv.</li>
+                            <li><strong>Statsd Exporter</strong>: Nimmt von den Pipelines Metriken im Statsd Format
+                                entgegen und stellt für Prometheus einen entsprechende Endpoint zum Pullen zur
+                                Verfügung.</li>
+                        </ul>
+                    </div>
+
+                    <div class="block">
+                        Das Statsd Format ist ein gängiges Format zum Loggen von Metriken. Der Statsd_Exporter übersetzt
+                        von diesem Format in ein für Prometheus verständliches Format.
+                    </div>
+
+                    <div class="block">
+                        Wieso kann auf die Funktionalität des Statsd_Exporters nicht verzichtet werden?
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                Hätten wir nur Streaming-Pipelines, könnte theoretisch auf die Funktionalität des
+                                Statsd_Exporters verzichtet werden. Die Pipelines könnten selber für das Polling von
+                                Prometheus einen entsprechenden Endpoint zur Verfügung stellen, da sie ja konstant
+                                laufen.
+
+                                Bei Batch-Pipelines, welche periodisch gestartet werden, durchlaufen und sich dann
+                                beenden, braucht es die Funktionalität des Statsd_Exporters hingegen zwingend.
+                            </article>
+                        </details>
+                    </div>
+
+                    <h3 class="title is-3"> Statsd Service</h3>
+
+                    <div class="block">
+                        Schau dir das compose file der Monitoring Dienste an. Via welchen Port kannst du von ausserhalb
+                        Docker auf Statsd zugreifen?
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                Von ausserhalb Docker kannst du via den Port 9102 zugreifen.
+                            </article>
+                        </details>
+                    </div>
+
+                    <div class="block">
+                        Nun schau dir das Mapping File an. Welche vier Informationen geben wir mit, wenn unsere Pipeline
+                        eine Drift Metrik loggt?
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                Die Information findest du im file
+                                <em>prometheus_config/statsd_metrics-mapping.yml</em>. Wir geben den Namen des Datensets
+                                mit, für welches wir den Drift berechnen (dataset_name), dessen
+                                Version (dataset_version), den Spaltennamen, um welchen es geht (column_name) sowie die
+                                Bezeichnung der Metrik, welche wir berechnen (metric_name).
+                            </article>
+                        </details>
+                    </div>
+
+                    <div class="block">
+                        Greife nun auf die Seite der Metriken zu, welche der Statsd_Exporter für Prometheus zur
+                        Verfügung stellt. Dazu öffnest du in Codespaces die Webseite des Statsd-Sevices (Port 9102) und
+                        fügst die URL <em>/metrics</em> an. Du siehst bereits viel Text, ohne dass wir schon etwas
+                        geloggt hätten. Was könnte dieser bedeuten?
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                Es handelt sich um Metriken, welche der Statsd_Exporter über sich selber zur Verfügung
+                                stellt, damit er als Service überwacht werden kann.
+                            </article>
+                        </details>
+                    </div>
+
+                    <div class="block">
+                        Der Exporter liest jeden empfangenen String, und wenn dieser in eines der definierten Mappings
+                        passt, erscheint der (aktualisierte) Wert auf der <em>/metrics</em> Webseite und kann von
+                        Prometheus gepollt werden.
+                    </div>
+
+                    <div class="block">
+                        Wie muss ein gültiger String aussehen, der eine unserer Drift Metriken definiert?
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                Die <em>match</em> direktive aus dem Mappings File zeigt das Muster mit vier Platzhalter
+                                an:
+
+                                <pre><code>match: "drift_metrics.*.*.*.*"</code></pre>
+
+                                Für die <em>*</em> können beliebige Werte einfügen, z.B.
+
+                                <pre><code>drift_metrics.mushroom.v1.cap-diameter.wasserstein</code></pre>
+
+                                Der eigentliche Wert wird, abgetrennt durch einen Doppelpunkt angehängt. Danach folgt,
+                                abgetrennt durch eine Pipe, der Typ der Metrik. Welche Typen es gibt, sehen wir später.
+
+                                <pre><code>drift_metrics.mushroom.v1.cap-diameter.wasserstein:42|g</code></pre>
+
+                                Die vier <em>labels</em> werden für die Umformatierung ins Prometheus Format verwendet.
+                            </article>
+                        </details>
+                    </div>
+
+                    <div class="block">
+                        Versuche nun testweise, den Wert einer Metrik an den Statsd_Exporter zu schicken. Dazu musst du
+                        den obigen String via UDP an den Port 8125 schicken. Am einfachsten geht dies via <a
+                            href="https://en.wikipedia.org/wiki/Netcat">netcat</a>. Da der Port aber nicht nach
+                        ausserhalb des Docker-Netzwerkes gemappt ist (nur <em>expose</em> und nicht <em>ports</em> im
+                        compose file), und netcat möglicherweise nicht auf dem Host (dem gestarteten codespace)
+                        installiert ist, verwendest du ein Docker Image. Führe den folgenden Befehl aus:
+                    </div>
+
+                    <div class="block">
+                        <pre><code>docker run -i --rm --network=production --name netcat_test subfuzion/netcat -u statsd 8125</code></pre>
+                    </div>
+
+                    <div class="block">
+                        Netcat wartet auf eine Eingabe (kein Prompt sichtbar), du pastest den folgenden String von oben
+                        und drückst Enter.
+                    </div>
+
+                    <div class="block">
+                        <pre><code>drift_metrics.mushroom.v1.cap-diameter.wasserstein:42|g</code></pre>
+                    </div>
+
+                    <div class="block">
+                        Nun gehe noch einmal auf die StatsD-Webseite. Die Metrik müsste nun mit dem Wert 42 sichtbar
+                        sein (wahrscheinlich oben an der Seite):
+                    </div>
+
+                    <div class="block">
+                        <pre><code>drift_metrics{column_name="cap-diameter",dataset_name="mushroom",dataset_version="v1",metric_name="wasserstein"} 42</code></pre>
+                    </div>
+
+                    <div class="block">
+                        Wir sehen, dass der Exporter die Angaben aus dem Mappings File verwendet hat, um die erhaltene
+                        Metrik für Prometheus umzuformatieren.
+                    </div>
+
+                    <div class="block">
+                        Den noch laufenden netcat Container kannst du mittels <em>docker stop netcat_test</em> stoppen
+                        (dazu musst du in Codespaces ein neues Terminal öffnen).
+                    </div>
+
+                    <h3 class="title is-3"> Prometheus Service</h3>
+
+                    <div class="block">
+                        Schau dir nun das Config File von Prometheus an. Was siehst du?
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                Es sind zwei Jobs definiert, Prometheus sammelt also Daten von zweien Services.
+                                Einerseits von sich selbst, und andererseits unsere Drift Metriken via Statsd.
+                                Eigentlich sollten noch weitere Quellen definiert sein, nämlich die unserer restlichen
+                                Services (Jupyter, MinIO, MLFlow, Redpanda, StatsD und das weiter unten folgende
+                                Grafana), weils wir in einem produktiven System ja jeden Service überwachen wollen.
+                                Diese haben wir der Einfachheit halber aber weggelassen.
+                            </article>
+                        </details>
+                    </div>
+
+                    <div class="block">
+                        Öffne nun die Webseite des Prometheus Services (Port 9090). Versuche, die vorher testweise
+                        geloggte Drift Metrik sowie Metriken zu Prometheus selber anzuzeigen.
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                Du kannst dazu im Query-Fenster beispielsweise <em>drift_metrics</em> eingeben und
+                                <em>Execute</em> drücken. Auto-Complete funktioniert auch.
+                            </article>
+                        </details>
+                    </div>
+
+                    <div class="block">
+                        Zeige nun noch via das Status Menu die konfigurierten Targets an. Du siehst die im Config File
+                        definierten Targets, <em>prometheus</em> und <em>dataset_metrics</em>.
+                    </div>
+
+                    <h3 class="title is-3"> Grafana</h3>
+
+                    <div class="block">
+                        Nun greife auf den Grafana Service (Port 3000) zu. Erstelle als erstes eine Data Source für
+                        Prometheus.
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <ol>
+                                    <li>Klicke im Sidebar links auf <em>Connections -> Data sources</em> und dann auf
+                                        <em>Add new data source</em> oben rechts.
+                                    </li>
+                                    <li>Suche und wähle <em>Prometheus</em></li>
+                                    <li>Setze unter Connections die <em>Prometheus server URL</em> auf
+                                        <em>http://prometheus:9090</em>
+                                    </li>
+                                    <li>Klicke ganz unten auf <em>Save & test</em>, es sollte eine grüne Erfolgsmeldung
+                                        Meldung erscheinen</li>
+                                </ol>
+                            </article>
+                        </details>
+                    </div>
+
+                    <div class="block">
+                        Als nächstes erstellst du ein neues Dashboard und fügst diesem eine Visualisierung hinzu. Baue
+                        dir eine Visualisierung, welche die Drift Metrik auf eine einfache Weise anzeigt. Du wirst noch
+                        nicht viel sehen können, denn du hast erst einen einzigen Datenpunkt, den vom obigen Test. Du
+                        kannst das Dashboard dann später ausbauen, wenn wir mehr Daten haben.
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <ol>
+                                    <li><em>Dashboards -> New</em></li>
+                                    <li><em>Add visualization</em></li>
+                                    <li>Prometheus auswählen</li>
+                                    <li>Unter <em>Metric</em> im <em>Select metric</em> dropdown <em>drift_metrics</em>
+                                        wählen</li>
+                                    <li>Button <em>Run queries</em> betätigen</li>
+                                </ol>
+                                Im Panel sieht man nun einen kleinen Punkt oder Strich und in der Legende eine lange
+                                Zeile (eventuell oben rechts noch auf Refresh klicken). Dieses
+                                automatisch generierte Label ist etwas unleserlich. Unter <em>Options</em> können wir
+                                das anpassen: Legend = Custom, statt = <em>{{label_name}}</em> setzen wir
+                                <em>{{column_name}}</em>.
+
+                                Nun noch rechts oben einen <em>Panel Title</em> setzen und Save klicken und Dashboard
+                                benennen.
+                            </article>
+                        </details>
+                    </div>
+
+                    <div class="block">
+                        Wenn du möchtest, kannst du nun in Prometheus noch Grafana selber als Quelle hinzufügen, damit
+                        wir auch den Grafana Dienst überwachen können :-)
+                    </div>
+
+                    <h1 class="title is-1">Architekturübersicht</h1>
+
+                    <div class="block">
+                        Unsere erweiterte Architektur (ohne Pipelines) sieht nun so aus.
+                    </div>
+
+                    <img src="img/monitoring_02.png" width="60%">
+
+                    <div class="block">
+                        Du kannst nun gleich mit der nächsten Übung weiterfahren (<a
+                            href="19_Drift_Detection_Pipeline.html">19_Drift_Detection_Pipeline</a>).
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </section>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+    <!-- and it's easy to individually load additional languages -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/go.min.js"></script>
+</body>
+
+</html>

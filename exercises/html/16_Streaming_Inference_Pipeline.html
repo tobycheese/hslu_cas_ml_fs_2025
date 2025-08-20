@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>16_Streaming_Inference_Pipeline</title>
+
+    <link rel="stylesheet" href="css/bulma.min.css">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/default.min.css">
+    <script src="css/highlight.min.js"></script>
+    <script>hljs.highlightAll();</script>
+    <script>
+        // prevent annoying text selection when clicking to open solutions, but allow normal mouse selection
+        document.addEventListener('mousedown', function (event) {
+            if (event.detail > 1) {
+                event.preventDefault();
+            }
+        }, false);
+    </script>
+</head>
+
+<body>
+    <section class="section">
+        <div class="container">
+            <div class="columns is-centered">
+                <div class="column is-10 content-column">
+
+
+                    <h1 class="title is-1">Streaming Inference Pipeline</h1>
+
+                    <div class="block">
+                        Nachdem wir eine Pipeline für Batch Inference gebaut haben, wollen wir nun Predictions in
+                        Echtzeit, aus einer Stream Processing Pipeline heraus, machen.
+                    </div>
+
+                    <h1 class="title is-1">Vorbereitung</h1>
+
+                    <div class="block">
+                        Erstelle ein neues Jupyter Notebook für diese Übung.
+                    </div>
+
+                    <h1 class="title is-1">Übungen</h1>
+
+                    <h3 class="title is-3"> Architektur</h3>
+
+                    <div class="block">
+                        Wir fügen unserer Architektur eine weitere Pipeline hinzu. Die Pipeline holt wiederum das Modell
+                        aus MLFlow. Die Daten für die Inferenz erhält sie jedoch von Kafka, und dorthin schreibt sie
+                        auch die Predictions.
+                    </div>
+
+                    <img src="img/streaming_pipeline_01.png" width="50%">
+
+                    <h3 class="title is-3"> Modell laden</h3>
+
+                    <div class="block">
+                        Dieser Teil bleibt gleich wie bei der Batch Pipeline. Importiere MLFlow, lade unser Modell via
+                        Champion Alias.
+                    </div>
+
+                    <div class="block">
+                        <pre>
+                        <code>import mlflow
+
+# we never defined an official name, make sure you use the name of your own registered model here
+model_name = "mushroom"
+
+# this also only works if you set this alias for above model
+model_version_alias = "champion"
+
+model_uri = f"models:/{model_name}@{model_version_alias}"
+model = mlflow.sklearn.load_model(model_uri)</code>
+                    </pre>
+                    </div>
+
+                    <h3 class="title is-3"> Quix</h3>
+
+                    <div class="block">
+                        Bisher haben wir via das Python Modul <a
+                            href="https://kafka-python.readthedocs.io/en/master/">kafka-python</a> mit Kafka
+                        kommuniziert. Unsere Pipeline werden wir jedoch mit <a href="https://quix.io/">Quix Streams</a>
+                        schreiben. Quix wirbt mit folgendem Slogan für ihr Produkt:
+                    </div>
+
+                    <div class="block">
+                        <em>Python stream processing made simple</em>
+                        <br />
+                        <em>
+                            Pure Python. No JVM. No wrappers. No cross-language debugging. Use Streaming DataFrames and
+                            the whole Python ecosystem to develop stream processing pipelines in fewer lines of code.
+                        </em>
+                    </div>
+
+                    <div class="block">
+                        Quix erlaubt auf relativ einfache Weise, in Python Stream Processing Pipelines zu schreiben, und
+                        dabei durch Kafka- und Kubernetes-Unterstützung sehr skalierbar zu bleiben. Insbesondere wird
+                        keine komplexe Basisinfrastruktur benötigt, um loslegen zu können.
+                    </div>
+
+                    <div class="block">
+                        Lies dir zum Einstieg die drei <a href="https://quix.io/docs/get-started/streaming.html">Core
+                            Concepts</a> <em>streaming</em>, <em>stream processing</em> und <em>stream processing
+                            pipelines</em> durch.
+                    </div>
+
+                    <div class="block">
+                        Wird werden mit einem StreamingDataFrame lokal arbeiten, d.h. in unserer Infrastruktur auf
+                        codespaces, und nicht mit der Quix Cloud. Die Dokumentation zum StreamingDataFrame findest du <a
+                            href="https://quix.io/docs/quix-streams/processing.html">hier</a>. Step 3 des <a
+                            href="https://quix.io/docs/quix-streams/quickstart.html">Quickstarts</a> zeigt ein Beispiel,
+                        wie wir vorgehen werden.
+                    </div>
+
+                    <h3 class="title is-3"> Quix Setup</h3>
+
+                    <div class="block">
+                        Initialisiere Quix Streams, analog dem Beispiel aus dem Quickstart:
+                    </div>
+
+                    <div class="block">
+                        <pre>
+                        <code>from quixstreams import Application
+
+# create main quix object
+app = Application(broker_address="message-broker:9092")
+
+# define topic and message format
+input_topic = app.topic(name="mushroom_inference_request", value_deserializer="json")
+
+# create a StreamingDataFrame
+sdf = app.dataframe(topic=input_topic)</code>
+                    </pre>
+                    </div>
+
+                    <div class="block">
+                        Nun hast du einen Streaming DataFrame, welcher aus Kafka Event notifications des Topics
+                        <em>mushroom_inference_request</em> erhält. Erweitere den obigen Code um eine Zeile, welche jede
+                        erhaltene Message ausgibt und um eine weitere Zeile, welche den ganzen Code dann ausführt.
+                    </div>
+
+                    <div class="block">
+                        <strong>Achtung: Obigen Initialisierungs-Code musst du jedesmal, wenn du den Consumer gestoppt
+                            hast, erneut ausführen, damit Quix wieder zu konsumieren beginnt.</strong>
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                Die <em>StreamingDataFrame.update()</em> Funktion erlaubt es, Side Effects auszuführen.
+                                Wir verwenden sie, um als Side Effect bei jedem Update des DataFrames, also bei jeder
+                                eingehenden Message, den Inhalt dieser message auszugeben. Unsere messages kommen als
+                                dict daher und <em>print</em> gibt dann einfach diesen <em>dict</em> aus.
+                                <pre><code>sdf = sdf.update(print)
+
+# the following is the same but (unnecessarily) more verbose
+# sdf = sdf.update(lambda message: print(f"Inference Request: {message}"))
+
+# and this line starts the consumer
+app.run(sdf)</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <div class="block">
+                        Wenn du deinen Code ausführst, solltest du Log Output sehen, welcher das Setup zeigt und meldet,
+                        dass auf eingehende Nachrichten gewartet wird. Diese musst du nun produzieren.
+                    </div>
+
+                    <div class="block">
+                        Starte den Datengenerator wie folgt und brich ihn dann nach ein, zwei Meldungen wieder ab
+                        (ctrl-c). Als Erinnerung: Damit das funkioniert, musst du dich in oder unterhalb dem Ordner
+                        befinden, in welchem das <em>docker-compose.yml</em> mit allen Servcices liegt.
+                    </div>
+
+                    <div class="block">
+                        <pre><code>docker compose run --rm --name=datagen --entrypoint=python3 development_env mushroom_datagen.py -v</code></pre>
+                    </div>
+
+                    <div class="block">
+                        Du solltest die von Datengenerator gesendeten Inference Requests im Notebook sehen.
+                    </div>
+
+                    <div class="block">
+                        Als nächstes soll nicht mehr die Nachricht ausgegeben werden, sondern das Modell aufgerufen und
+                        die
+                        Prediction als weitere Spalte angehängt werden.
+                    </div>
+
+                    <div class="block">
+                        Dazu muss:
+                    </div>
+
+                    <div class="block">
+                        <ul>
+                            <li>Die message von einem dict in einen Pandas DataFrame (oder ein 2D Numpy array)
+                                konvertiert werden</li>
+                            <li>Die Prediction gemacht werden</li>
+                            <li>Das Resultat der Prediction in einen Integer Scalar konvertiert werden</li>
+                            <li>Dieser Integer mit dem Key 'prediction' an die ursprüngliche message (dict) angehängt
+                                werden</li>
+                        </ul>
+                    </div>
+
+                    <div class="block">
+                        Versuche, dies mit <em>sdf.update()</em> analog oben zu erreichen. Gib zur Kontrolle danach
+                        (auch analog
+                        oben) das Resultat aus.
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <pre><code>import pandas as pd
+
+# als Zweizeiler, etwas kryptisch:
+sdf = sdf.update(lambda m: m.update({'prediction': int(model.predict(pd.DataFrame(m, index=[0]))[0])}))
+sdf = sdf.update(print)
+
+
+# oder mit separater Funktion, Schritt für Schritt
+
+def predict(d: dict) -> int:
+    # reads single row dict and returns prediction as integer scalar
+    # spelled out to make it easier to read
+    
+    input_as_df = pd.DataFrame(d, index=[0])
+    pred_as_array = model.predict(input_as_df)
+    pred_as_scalar = pred_as_array[0]
+    
+    return int(pred_as_scalar)
+
+# das innere update ist die update Funktion des python dictionaries und hat nichts mit quix zu tun
+sdf.update(lambda m: m.update({'prediction': predict(m)}))
+sdf = sdf.update(print)
+
+
+app.run(sdf)</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <div class="block">
+                        Schliesslich wollen wir unter einem neuen topic unsere prediction ausgeben. Definiere dazu ein
+                        topic <em>mushroom_inference_result</em> und bringe den StreamingDataFrame dazu, jedes Resultat
+                        an dieses topic zu schicken.
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <pre><code># anstelle der beiden letzten Zeilen oben
+output_topic = app.topic(name="mushroom_inference_result", value_deserializer="json")
+
+sdf.to_topic(output_topic)
+
+app.run(sdf)</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <div class="block">
+                        Sende zum Schluss einige Messages (inference requests) und prüfe in Redpanda, ob die
+                        dazugehörigen prediction results als messages ankommen.
+                    </div>
+
+                    <h3 class="title is-3"> Wrapup</h3>
+
+                    <div class="block">
+                        Du hast in dieser Übung eine Stream Processing Pipeline gebaut, welche Inferenz-Requests für
+                        unser Mushroom Modell entgegennimmt, mit unserem Modell eine Prediction macht und das Resultat
+                        zurück an Kafka sendet.
+                    </div>
+
+                    <div class="block">
+                        Dabei haben wir auch ein paar Abkürzungen genommen, was im Rahmen eines Kurses zwar vertretbar
+                        ist, deren wir uns daber auch bewusst sein sollten:
+                    </div>
+
+                    <div class="block">
+                        <ul>
+                            <li>Wir haben uns nicht um Skalierbarkeit gekümmert. Mit unserem Aufbau und dank Quix ist
+                                die
+                                Pipeline jedoch einfach skalierbar, wenn sie unter Kubernetes läuft</li>
+                            <li>Unser Meldungsformat war sehr einfach und ohne jegliche Metadaten</li>
+                            <li>Unser Meldungsformat war ein einfaches json, ohne Schema und Validierung</li>
+                            <li>Einige Dinge haben wir hartkodiert bzw. nicht sauber entkoppelt (z.B. Feature Typen,
+                                Topic)</li>
+                            <li>Keine Tests, kein sauberes Error Handling, kein Monitoring</li>
+                        </ul>
+                    </div>
+
+                    <div class="block">
+                        Und inbesondere
+                    </div>
+
+                    <div class="block">
+                        Wir machen Inferenz mit Realtime Daten, welche alle im Request daher kommen. Wir verwenden also
+                        keine vorausberechneten Features, wir joinen keine anderen Feature-Quellen. Wer hier mehr wissen
+                        möchte, muss sich vertieft mit Stream Processing auseinandersetzen.
+                    </div>
+
+
+                </div>
+            </div>
+        </div>
+    </section>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+    <!-- and it's easy to individually load additional languages -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/go.min.js"></script>
+</body>
+
+</html>

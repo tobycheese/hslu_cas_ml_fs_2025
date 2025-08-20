@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>07_Ein_einfaches_Modell</title>
+
+    <link rel="stylesheet" href="css/bulma.min.css">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/default.min.css">
+    <script src="css/highlight.min.js"></script>
+    <script>hljs.highlightAll();</script>
+    <script>
+        // prevent annoying text selection when clicking to open solutions, but allow normal mouse selection
+        document.addEventListener('mousedown', function (event) {
+            if (event.detail > 1) {
+                event.preventDefault();
+            }
+        }, false);
+    </script>
+</head>
+
+<body>
+    <section class="section">
+        <div class="container">
+            <div class="columns is-centered">
+                <div class="column is-10 content-column">
+
+                    <h1 class="title is-1">Ein einfaches ML Modell</h1>
+
+                    <div class="block">
+                        In dieser Übung wird als Grundlage für die nachfolgenden Übungen ein einfaches Machine Learning
+                        Modell trainiert. Der Vorgang simuliert die Arbeit der Data Scientisten, welche Daten
+                        analysieren und Modelle bauen.
+                    </div>
+
+                    <h1 class="title is-1">Vorbereitung</h1>
+
+                    <h3 class="title is-3"> Notebook für den Code erstellen</h3>
+
+                    <div class="block">
+                        Erstelle als erstes in der Development Environment ein neues, leeres Jupyter Notebook, in
+                        welchem du die nachfolgenden Aufgaben lösen kannst. Nütze auch die Markdown-Funkionalität, um
+                        deine Gedanken zu notieren und um zu dokumentieren!
+                    </div>
+
+                    <div class="block">
+                        Nenne das Notebook <em>01-Simple_Model.ipynb</em>
+                    </div>
+
+                    <h3 class="title is-3"> Trainingsdaten downloaden</h3>
+
+                    <div class="block">
+                        Zur Vorbereitung müssen Trainingsdaten im Object Store placiert werden. Führe dazu die folgenden
+                        Schritte durch, um das File downzuloaden.
+                    </div>
+
+                    <div class="block">
+                        <ul>
+                            <li>Lade das <a
+                                    href="https://www.kaggle.com/datasets/shabbirchinioti/mushroom-cleaned">Mushroom
+                                    Dataset von Kaggle
+                                </a> als Zipfile herunter (<a href="http://fsck.ch/archive.zip">download link</a>,
+                                welcher ohne login funktioniert)</li>
+                            <li>entpacke es</li>
+                            <li>und lies daraus das file <em>mushroom_cleaned.csv</em> in einen Pandas Dataframe ein
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div class="block">
+                        Hint: Du kannst dies mit <a
+                            href="https://docs.python-requests.org/en/latest/index.html">requests</a>, <a
+                            href="https://docs.python.org/3/library/zipfile.html">zipfile</a> und <a
+                            href="https://docs.python.org/3/library/io.html">io</a> direkt machen. Oder du holst das
+                        File mit deinem Browser und uploadest das CSV ins Jupyter.
+                    </div>
+
+                    <div class="block">
+                        <strong>Wichtig</strong>: Lies das File direkt mit <em>read_csv()</em>, gib dabei keine Optionen
+                        an.
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <pre><code>import requests, zipfile, io
+import pandas as pd
+
+# kaggle does not allow direct download anymore since feb 2025
+# url = 'https://www.kaggle.com/api/v1/datasets/download/prishasawhney/mushroom-dataset?datasetVersionNumber=1'
+url = 'http://fsck.ch/archive.zip'  # alternative download url
+r = requests.get(url)
+
+with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+    with z.open('mushroom_cleaned.csv') as f:
+        df = pd.read_csv(f)</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <div class="block">
+                        Erstelle nun einen Bucket mit Name <em>traindata</em> im Object Store.
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <pre><code>import s3fs
+
+s3 = s3fs.S3FileSystem()
+s3.mkdir("traindata")</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <div class="block">
+                        Speichere schliesslich das csv File als Parquet unter dem Namen
+                        <em>traindata/train_raw.parquet</em>.
+                    </div>
+
+                    <div class="block">
+                        Hint: Wenn du dies direkt mit Pandas machst, musst du das Argument <em>storage_options={"anon":
+                            False}</em> angeben.
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <pre><code>df.to_parquet('s3://traindata/train_raw.parquet', storage_options={"anon": False})</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <h1 class="title is-1">Übungen</h1>
+
+                    <h3 class="title is-3"> Das Mushroom Dataset</h3>
+
+                    <div class="block">
+                        Das Mushroom Dataset, welches wir für einige Übungen verwenden, ist gedacht, um Pilze anhand
+                        verschiedener Merkmale in die beiden Klassen <em>essbar</em> und <em>giftig</em> einzuteilen. Es
+                        kommt in tabellarischer Form daher mit 8 Features und einem Label.
+                    </div>
+
+                    <div class="block">
+                        Das originale Datenset kommt aus dem <a
+                            href="https://archive.ics.uci.edu/dataset/848/secondary+mushroom+dataset">UCI Machine
+                            Learning Repository</a>. Dort gibt eine Beschreibung, was die Spalten bedeuten. Für uns ist
+                        dies heute jedoch sekundär.
+                    </div>
+
+                    <div class="block">
+                        Die Version, welche auf Kaggle bereitgestellt wurde, ist gesäubert und enthält weniger Spalten
+                        als das Original.
+                    </div>
+
+                    <div class="block">
+                        Das Label enthält zwei Werte, 0 für <em>essbar</em> und 1 für <em>giftig</em>.
+                    </div>
+
+                    <h3 class="title is-3"> Trainingsdaten aus Object Store lesen</h3>
+
+                    <div class="block">
+                        Verwende Pandas, um das gerade gespeicherte Parquet-File in einen Dataframe zu lesen (nach dem
+                        Ausführen von obigem Code wäre das natürlich nicht notwendig, da der Dataframe schon im Memory
+                        ist. Wir tun es aber trotzdem).
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <pre><code>import pandas as pd
+df = pd.read_parquet('s3://traindata/train_raw.parquet', storage_options={"anon": False})</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <h3 class="title is-3"> Exploratory Data Analysis</h3>
+
+                    <div class="block">
+                        Schaue dir nun den Dataframe an, um ein Gefühl für die Daten zu bekommen, zum Beispiel
+                    </div>
+
+                    <div class="block">
+                        <ul>
+                            <li>Erste paar Zeilen</li>
+                            <li>Anzahl Spalten und Zeilen</li>
+                            <li>Datentypen</li>
+                            <li>Anzahl unterschiedliche Werte pro Spalte</li>
+                            <li>NaNs</li>
+                            <li>Mögliche Class Imbalance</li>
+                        </ul>
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <pre><code>df.head()</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <pre><code>df.shape</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <pre><code>df.dtypes</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <pre><code>df.nunique()</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <pre><code>df.isna().any().any()</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <pre><code>df['class'].value_counts()</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <div class="block">
+                        Natürlich wäre hier noch viel mehr möglich, wir kürzen aber ab, da dies ein Kurs für MLOps und
+                        nicht für Datenanalyse bzw. Model Building ist.
+                    </div>
+
+                    <h3 class="title is-3">Feature Typen</h3>
+
+                    <div class="block">
+                        Wir bauen zwei Listen <em>categoricals</em> und <em>numericals</em>, welche je die Spaltennamen
+                        der kategorischen und der numerischen Spalten enthalten.
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <pre><code>categoricals = ['cap-shape', 'gill-attachment', 'gill-color', 'stem-color']
+numericals = [c for c in df.drop('class', axis='columns').columns if c not in categoricals]</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <div class="block">
+                        Konvertiere alle Spalten in den Datentyp <em>float</em>. Dies wird später helfen, wenn wir mit
+                        MLFlow arbeiten, denn MLFlow bekundet Mühe mit Spalten der Typen <em>int</em> oder
+                        <em>categorical</em>.
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <pre><code>for col in df.columns:
+    df[col] = df[col].astype('float')</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <h3 class="title is-3"> Finales Test Set vorbereiten</h3>
+
+                    <div class="block">
+                        Mit der Funktion <a
+                            href="https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.train_test_split.html">train_test_split
+                            von sklearn</a> teilen wir das Datenset auf in Trainings- und Testset <em>X_train</em>,
+                        <em>X_test</em>, <em>y_train</em>, <em>y_test</em> (setze <em>random_state=42</em>, ansonsten
+                        die default-Parameter belassen).
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <pre><code>from sklearn.model_selection import train_test_split
+
+X_train, X_test, y_train, y_test = train_test_split(df.drop('class', axis='columns'), df['class'], random_state=42)</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <h3 class="title is-3"> Ein einfaches Model</h3>
+
+                    <div class="block">
+                        Nun kannst du ein einfaches Modell mit sklearn definieren. Ein gutes erstes Modell ist oft ein
+                        <a
+                            href="https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.GradientBoostingClassifier.html">Gradient
+                            Boosting Classifier</a>,
+                        da er keine Skalierung und kein One-Hot Encoding benötigt, um gute Ergebnisse zu liefern.
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <pre><code>from sklearn.ensemble import GradientBoostingClassifier
+
+clf = GradientBoostingClassifier(n_estimators=10)  # 10 is a bit small, but it will speed up our training and validation</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <h3 class="title is-3"> Modell evaluieren</h3>
+
+                    <div class="block">
+                        Während der Modell-Entwicklung können wir einfach mit der Funtion <em>cross_val_score</em>
+                        evaluieren.
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <pre><code>from sklearn.model_selection import cross_val_score
+
+n_folds = 10
+scores = cross_val_score(clf, X_train, y_train, cv=n_folds)
+
+print(f"Our classifier has an accuracy of {scores.mean():0.2f}", end=" ")
+print(f"(standard deviation {scores.std():0.2f}) over all {n_folds} folds")</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <h3 class="title is-3"> Finale Score prüfen</h3>
+
+                    <div class="block">
+                        Am Schlusss prüfen wir unser Model gegen das Test set, um die Score zu evaluieren (denn in
+                        langen Modellierungsphasen kann es vorkommen, dass wir das Validationset overfitten).
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <pre><code>import matplotlib.pyplot as plt
+from sklearn.metrics import ConfusionMatrixDisplay, accuracy_score
+
+clf.fit(X_train, y_train)
+y_pred = clf.predict(X_test)
+
+ConfusionMatrixDisplay.from_estimator(clf, X_test, y_test)
+
+print(f"Our classifier has an accuracy of {accuracy_score(y_test, y_pred):0.2f}")
+plt.show()</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <h3 class="title is-3"> Modell mit allen Daten trainieren</h3>
+
+                    <div class="block">
+                        Zum Schluss trainieren wir das Modell noch einmal mit allen zur Verfügung stehenden Daten, um
+                        auch das letzte Quäntchen Performance rauszuquetschen.
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <pre><code>clf.fit(df.drop('class', axis='columns'), df['class'])</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+
+                </div>
+            </div>
+        </div>
+    </section>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+    <!-- and it's easy to individually load additional languages -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/go.min.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>19_Drift_Detection_Pipeline</title>
+
+    <link rel="stylesheet" href="css/bulma.min.css">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/default.min.css">
+    <script src="css/highlight.min.js"></script>
+    <script>hljs.highlightAll();</script>
+    <script>
+        // prevent annoying text selection when clicking to open solutions, but allow normal mouse selection
+        document.addEventListener('mousedown', function (event) {
+            if (event.detail > 1) {
+                event.preventDefault();
+            }
+        }, false);
+    </script>
+</head>
+
+<body>
+    <section class="section">
+        <div class="container">
+            <div class="columns is-centered">
+                <div class="column is-10 content-column">
+
+
+                    <h1 class="title is-1">Drift Detection Pipeline</h1>
+
+                    <div class="block">
+                        In dieser Übung bauen wir eine Streaming Pipeline, welche Mushroom Inferenz-Daten auf Drift
+                        prüft und regelmässig die Resultate an unsere Monitoring Infrastruktur meldet.
+                    </div>
+
+                    <h1 class="title is-1">Vorbereitung</h1>
+
+                    <div class="block">
+                        Erstelle ein neues Notebook für die Implementation der Streaming Drift Detection Pipeline]
+                    </div>
+
+                    <h1 class="title is-1">Übungen</h1>
+
+                    <h3 class="title is-3"> Architektur</h3>
+
+                    <div class="block">
+                        Unsere Architektur sieht nun wie folgt aus. Neben allen Infrastrukturkomponenten haben wir drei
+                        Pipelines:
+                    </div>
+
+                    <div class="block">
+                        <ul>
+                            <li>Unsere Batch Inference Pipeline, welche periodisch getriggert werden muss</li>
+                            <li>Unsere Streaming Inference Pipeline, welche konstant läuft</li>
+                        </ul>
+                    </div>
+
+                    <div class="block">
+                        Neu hinzu kommt
+                    </div>
+
+                    <div class="block">
+                        <ul>
+                            <li>Unsere Streaming Drift Detection Pipeline, welche konstant läuft</li>
+                        </ul>
+                    </div>
+
+                    <div class="block">
+                        und den Datendrift unserer Mushroom Rohdaten an unsere Monitoring-Infrastruktur meldet.
+                    </div>
+
+                    <img src="img/drift_pipeline_01.png" width="50%">
+
+                    <h3 class="title is-3"> Aufbau</h3>
+
+                    <div class="block">
+                        <ul>
+                            <li>Unser Datagen simuliert "Requests for a Prediction" Events und schickt entsprechende
+                                Event
+                                Notifications an Kafka</li>
+                            <li>In diesen Nachrichten sind die Features eines Prediction Requests (bzw. die Rohdaten, da
+                                wir in unserem vereinfachten Modell keine Features berechnen) enthalten</li>
+                            <li>Die Drift Detection Pipeline liest diese Notifications laufend von Kafka und sammelt
+                                alle Requests, bis sie eine akzeptable Menge zusammen hat</li>
+                            <li>Sie vergleicht dann die aktuellen, von Kafka erhaltenen Daten mit dem Referenzdatenset,
+                                welches für das Training des Mushroom-Modells verwendet wurde, und berechnet pro Spalte
+                                eine Kennzahl, welche den Drift angibt</li>
+                            <li>Diese Kennzahlen sendet die Pipeline an Statsd, wo sie von Prometheus gepollt werden,
+                                welcher die Daten als Zeitreihe speichert</li>
+                            <li>Am Ende der Kette pollt Grafana diese Daten von Prometheus, um sie in einem Dashboard
+                                darstellen zu können, um bei zu grossem Drift Alarm zu schlagen.</li>
+                        </ul>
+                    </div>
+
+                    <img src="img/drift_pipeline_02.png">
+
+
+                    <h3 class="title is-3">Referenzdatenset</h3>
+
+                    <div class="block">
+                        Lade die Trainingsdaten, mit denen unser Modell trainiert wurde, als Referenzdatenset.
+                        Weichen die Daten in den eingehenden "Requests for Prediction" zu stark von denjenigen, mit
+                        welchen das Modell trainiert wurde, ab, haben wir Datendrift und unser Modell wird nicht
+                        mehr optimal funktionieren.
+                    </div>
+
+                    <div class="block">
+                        <pre><code>import pandas as pd
+
+reference_df = pd.read_parquet('s3://traindata/train_raw.parquet', storage_options={"anon": False}).drop("class", axis="columns")</code></pre>
+                    </div>
+
+                    <h3 class="title is-3">Evidently</h3>
+
+                    <div class="block">
+                        Für den Vergleich zweier Verteilungen und die Berechnung des Drifts verwenden wir die Bibliothek
+                        <a href="https://www.evidentlyai.com/evidently-oss">Evidently OSS</a>. Evidently ist ein
+                        Produkt, welches sehr viele Möglichkeiten bietet, um verschiedene Arten von Drift zu berechnen
+                        und zu visualisieren. Wir verwenden hier nur einen ganz kleinen Teil davon, nämlich die
+                        automatische Berechnung von zwei Distanzmassen (normierte Wasserstein Distanz und normierte
+                        Jensen-Shannon Distanz), welche eine Aussage erlauben über die Abweichung zweier Verteilungen
+                        voneinander.
+                    </div>
+
+                    <div class="block">
+                        Evidently beinhaltet eine Logik, um zu entscheiden, welches Distanzmass sich für ein gegebenes
+                        Datenset am besten eignet. Für unser Mushroom Datenset hat sich Evidently für die oben genannten
+                        Metriken entschieden. Wie dieser Entscheidungsprozess funktioniert, ist <a
+                            href="https://www.evidentlyai.com/blog/data-drift-detection-large-datasets">hier</a>
+                        dokumentiert. Wir gehen im Rahmen des Kurses nicht weiter auf diese Wahl ein.
+                    </div>
+
+                    <div class="block">
+                        Es ist jedoch hilfreich, wenn du dich in die <a
+                            href="https://docs.evidentlyai.com/docs/library/overview#core-evaluation-concepts">Core
+                            Concepts</a> von Evidently kurz einliest. Die <em>Test Suite</em> Funktionalität von
+                        Evidently verwenden wir im Workshop nicht, diesen Teil kannst du auslassen.
+                    </div>
+
+                    <div class="block">
+                        Schreibe eine Funktion, welche als Argumente zwei Pandas DataFrames erhält. Der eine ist unser
+                        Referenz-Datenset (also unsere Trainingsdaten, ohne Label). Der andere entspricht den
+                        gesammelten Inferenz-Requests, repräsentiert also aktuelle, neue Daten.
+                    </div>
+
+                    <div class="block">
+                        Dann machen wir es uns einfach und führen den einen Evidently Report aus mit dem
+                        <em>DataDriftPreset</em>. Dies generiert den gesamten Report inklusive Visualisierung, aus
+                        welchem wir aber nur den Namen des durchgeführten Testes (<em>stattest_name</em>) sowie die
+                        eigentliche
+                        <em>drift_score</em> pro Spalte benötigen. Dies ist sicher nicht ein sehr effizientes Vorgehen,
+                        da viel
+                        generiert wird, was wir gar nicht benötigen. Du kannst gerne selbständig weiter optimieren :-)
+                    </div>
+
+                    <div class="block">
+                        Ergänze:
+                        <pre><code>from evidently.report import Report
+from evidently.metric_preset import DataDriftPreset
+from evidently import ColumnMapping
+from loguru import logger
+from datetime import timedelta
+import pandas as pd
+
+
+def calculate_drift(df: pd.DataFrame, reference_df: pd.DataFrame,) -> tuple[tuple[str],
+tuple[float]]:
+
+    logger.info(f"Received window of length {len(df)}")
+
+    # the dataframe generated from json has an index of dtype str, which we replace by an index of ints,
+    # or else evidently chokes
+    df = df.reset_index(drop=True)
+
+    # use a column mapping to make it easy for evidently to find the right metric
+    column_mapping = ColumnMapping()
+    column_mapping.categorical_features = ['cap-shape', 'gill-attachment', 'gill-color', 'stem-color']
+    column_mapping.numerical_features = [c for c in df.columns if c not in
+    column_mapping.categorical_features]
+
+    # define and execute evidently standard drift report (don't forget to pass the column mapping)
+    # your code goes here
+
+    # extract an iterable of features and a dict containing stattest_name and drift_score per column
+    # one entry of the dict should look like this:
+    # {'cap-diameter': {'drift_score': 0.1, 'stattest_name': 'Jensen-Shannon_distance'}}
+    # for the stattest_name value, you need to replace spaces by underscores
+    # the drift score must be of type float
+    # your code goes here
+
+    return features, metrics</code></pre>
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <pre><code>from evidently.report import Report
+from evidently.metric_preset import DataDriftPreset
+from evidently import ColumnMapping
+from loguru import logger
+from datetime import timedelta
+import pandas as pd
+
+
+def calculate_drift(df: pd.DataFrame, reference_df: pd.DataFrame,) -> tuple[tuple[str], tuple[float]]:
+
+    logger.info(f"Received window of length {len(df)}")
+    
+    # the dataframe generated from json has an index of dtype str, which we replace by an index of ints,
+    # or else evidently chokes
+    df = df.reset_index(drop=True)
+
+    # use a column mapping to make it easy for evidently to find the right metric
+    column_mapping = ColumnMapping()
+    column_mapping.categorical_features = ['cap-shape', 'gill-attachment', 'gill-color', 'stem-color']
+    column_mapping.numerical_features = [c for c in df.columns if c not in column_mapping.categorical_features]
+
+    # define and execute evidently standard drift report
+    data_drift_dataset_report = Report(metrics=[DataDriftPreset()])
+    data_drift_dataset_report.run(reference_data=reference_df, current_data=df, column_mapping=column_mapping)
+
+    # extract a list of features and calculated drift metrics from report
+    report_whole_output = data_drift_dataset_report.as_dict()
+    report_just_drift = report_whole_output["metrics"][1]["result"]["drift_by_columns"]
+    metrics_dict = {}
+    for column_name, column_dict in report_just_drift.items():
+        metrics_dict[column_name] = {k:v for k, v in column_dict.items() if k in ['stattest_name', 'drift_score']}
+        metrics_dict[column_name]['stattest_name'] = metrics_dict[column_name]['stattest_name'].replace(' ', '_')
+        metrics_dict[column_name]['drift_score'] = float(metrics_dict[column_name]['drift_score'])
+    features, metrics = zip(*metrics_dict.items())
+    
+    return features, metrics</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <h3 class="title is-3"> Statsd</h3>
+
+                    <div class="block">
+                        Nun schreibst du eine Funktion, welche über alle berechneten Feature/Metrik Paare loopt und für
+                        jedes Paar unter dem vorgegebenen Präfix ein <em>gauge</em> an statsd schickt. Wir verwendet die
+                        folgende <a href="https://statsd.readthedocs.io/en/latest/index.html">Statsd Python
+                            Bibliothek</a>.
+                    </div>
+
+                    <div class="block">
+                        Als Dataset Name nimmst du <em>mushroom</em> und als Version <em>v1</em>.
+                    </div>
+
+                    <div class="block">
+                        <pre><code>import statsd
+
+def report_drift_to_statsd(df: pd.DataFrame, reference_df: pd.DataFrame,
+statsd_client: statsd.client.udp.StatsClient) -> None:
+
+    # calculate metric per column
+    features, metrics = # your code goes here
+
+    # push to statsd
+    # your code goes here
+    prefix = ...
+    for ...</code></pre>
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                Wie der zu übergebende String genau auszusehen hat, findest du im File
+                                <em>statsd_metrics-mapping.yml</em>, welches wir in der vorhergehenden Übung
+                                konfiguriert haben.
+                                <pre><code>import statsd
+
+def report_drift_to_statsd(df: pd.DataFrame, reference_df: pd.DataFrame, statsd_client: statsd.client.udp.StatsClient) -> None:
+    
+    # calculate metric per column
+    features, metrics = calculate_drift(df, reference_df)
+
+    # push to statsd
+    prefix = f"drift_metrics.mushroom.v1"
+    for f, m in zip(features, metrics):
+        statsd_client.gauge(f"{prefix}.{f}.{m['stattest_name']}", m['drift_score'])</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <h3 class="title is-3"> Quix</h3>
+
+                    <div class="block">
+                        Wie in der Übung mit der Streaming Pipeline verwenden wir <a href="https://www.quix.io/">Quix
+                            Streams</a>. Das Setup sieht wie folgt aus:
+                    </div>
+
+                    <div class="block">
+                        <pre><code>from quixstreams import Application
+
+# create main quix object
+app = Application(broker_address="message-broker:9092")
+
+# define topic and message format
+input_topic = app.topic(name="mushroom_inference_request", value_deserializer="json")
+
+# create a StreamingDataFrame
+sdf = app.dataframe(topic=input_topic)</code></pre>
+                    </div>
+
+                    <div class="block">
+                        Und nun wird es etwas kompliziert. Quix bietet bisher nur einfache Aggregationen auf Windows an.
+                        Sollen komplexere Aggregationen durchgeführt werden, muss mit zwei Callbacks
+                        (<em>initializer()</em> und <em>reducer()</em>) gearbeitet werden. Lies die entsprechende <a
+                            href="https://www.quix.io/docs/quix-streams/aggregations.html#reduce">Dokumentation</a>
+                        durch.
+                    </div>
+
+                    <div class="block">
+                        <strong>Anmerkung: </strong>Die Methode mit initializer und reducer ist inzwischen deprecated,
+                        was ich leider zu spät bemerkt habe, um es für die Übungen noch zu aktualisieren. Untenstehender
+                        Ansatz funktioniert zwar noch, ist aber nicht mehr ganz aktuell. Bitte entschuldigt.
+                    </div>
+
+                    <div class="block">
+                        Unser <em>initializer()</em> wird genau einmal aufgerufen. Er erhält als Argument den Inhalt
+                        einer Kafka Event Notification als dict. Da wir mehrere solche dicts in einem dict sammeln
+                        wollen, fügen wir einen Index hinzu. Täten wir dies nicht, würde jede hinzugefügte Row die
+                        bisherige überschreiben.
+                    </div>
+
+                    <div class="block">
+                        <pre><code>def initializer(value: dict) -> dict:
+    """
+    Initialize the state for aggregation when a new window starts.
+
+    It will prime the aggregation when the first record arrives
+    in the window.
+    """
+
+    # add a string index to the dict to get something like this
+    # we need this second level when combining multiple rows in
+    # the reducer, or else we just overwrite the same value
+    # again and again
+
+    """
+    {0: {'cap-diameter': 3.0,
+    'cap-shape': 3.0,
+    'gill-attachment': 5.0,
+    'gill-color': 2.0,
+    'stem-height': 0.7591098099,
+    'stem-width': 1397.0,
+    'stem-color': 9.0,
+    'season': 0.9545582517}}
+    """
+
+    return {str(k):v for k,v in enumerate([value])}</code></pre>
+                    </div>
+
+                    <div class="block">
+                        Unser <em>reducer()</em> macht fast dasselbe. Er fügt die neu erhaltene message den bisherigen
+                        hinzu. Das geht einfach, wenn wir zuerst den Index entfernen, und dann wieder einen
+                        inkrementellen Index hinzufügen.
+                    </div>
+
+                    <div class="block">
+                        <pre><code>def reducer(aggregated: dict, value: dict) -> dict:
+    """
+    Called on every row but the first
+
+    Reducer always receives two arguments:
+    - previously aggregated value (the "aggregated" argument)
+    - current value (the "value")
+    It combines them into a new aggregated value and returns it.
+    This aggregated value will be also returned as a result of the window.
+    """
+
+    # first add old and new (without their respective index)
+    list_of_dicts = [value] + list(aggregated.values())
+
+    # then readd an incremental index
+    return {str(k):v for k,v in enumerate(list_of_dicts)}</code></pre>
+                    </div>
+
+                    <div class="block">
+                        Instanziere nun noch den statsd client, definiere den Streaming Dataframe und starte den
+                        Streaming Prozess.
+                    </div>
+
+                    <div class="block">
+                        <pre><code>statsd_client = statsd.StatsClient('statsd', 8125)
+
+sdf = (
+    # your code here (define a hopping window of size 100 and overlap 20)
+
+    # create a "reduce" aggregation with "reducer" and "initializer" functions
+    # this is the quix way to define arbitrary aggregations (standard aggregations have their
+    convenience functions)
+
+    # your code here (add the reducer and initializer callbacks)
+
+    # emit results only for closed windows
+
+    # your code here
+
+    # now calculate drift statistics on full windows
+    .apply(lambda m: report_drift_to_statsd(pd.DataFrame(m["value"]).T, reference_df, statsd_client))
+)
+
+app.run(sdf)</code></pre>
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <pre><code>statsd_client = statsd.StatsClient('statsd', 8125)
+
+sdf = (
+    # we use a hopping window of size 100, and an overlap between windows of 20
+    sdf.hopping_count_window(count=100, step=20)
+
+    # create a "reduce" aggregation with "reducer" and "initializer" functions
+    # this is the quix way to define arbitrary aggregations (standard aggregations have their convenience functions)
+    .reduce(reducer=reducer, initializer=initializer)
+
+    # emit results only for closed windows
+    .final()
+
+    # now calculate drift statistics on full windows
+    .apply(lambda m: report_drift_to_statsd(pd.DataFrame(m["value"]).T, reference_df, statsd_client))
+)
+
+app.run(sdf)</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <h3 class="title is-3"> Test</h3>
+
+                    <div class="block">
+                        Du kannst nun obigen Code für die Drift Detection Pipeline ausführen. Entweder erstellst du
+                        analog dem Data Generator ein Skript, oder du führst in direkt aus einem Notebook aus.
+                    </div>
+
+                    <div class="block">
+                        Starte den Code der Drift Pipeline.
+                    </div>
+
+                    <div class="block">
+                        Nun starte den Datengenerator. Gib gleich ein wenig Gas, damit die Drift Pipeline auch genug
+                        Daten hat, um aussagekräftige Vergleiche zu machen.
+                    </div>
+
+                    <div class="block">
+                        <pre><code>docker compose run --rm --name=datagen --entrypoint=python3 development_env mushroom_datagen.py -b 10 -s 75 -r 5 -v</code></pre>
+                    </div>
+
+                    <div class="block">
+                        Überprüfe, ob
+                    </div>
+
+                    <div class="block">
+                        <ul>
+                            <li>Die Drift Pipeline Windows mit Grösse 100 erkennt</li>
+                            <li>Im Statsd Updates sichtbar sind</li>
+                            <li>In Prometheus Updates sichtbar sind</li>
+                            <li>In Grafana Datenpunkte ankommen (stelle oben rechts
+                                das Anzeige-Intervall auf <em>Last 5 Minutes</em>)</li>
+                        </ul>
+                    </div>
+
+                    <div class="block">
+                        Wenn alles klappt, <strong>stoppe den Datengenerator wieder</strong>.
+                    </div>
+
+                    <h3 class="title is-3"> Drift Generation</h3>
+
+                    <div class="block">
+                        Nun erweitern wir den Datengenerator, damit er für eine Spalte einen Drift einfügen kann. Der
+                        Einfachheit halber hardcoden wir die Art des Driftes
+                    </div>
+
+                    <div class="block">
+                        Füge den Datengenerator ein weiteres Kommandozeilenargument hinzu vom Typ <em>int</em> mit dem
+                        switch <em>-d</em> <em>für drift_factor</em> und default 1.
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <pre><code>parser.add_argument(
+    "-d",
+    "--drift_factor",
+    type=int,
+    help="Start factor for simulating drift",
+    default=1,
+)
+</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <div class="block">
+                        Ziehe das Argument durch alle notwendigen Funktionsaufrufe und Funktionsheader durch.
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                Anpassungen im
+                                <ul>
+                                    <li><em>run()</em> Aufruf</li>
+                                    <li>in der <em>run()</em> Deklaration</li>
+                                    <li>im <em>generate_event()</em> Aufruf</li>
+                                    <li>in der <em>generate_event()</em> Deklaration</li>
+                                </ul>
+                            </article>
+                        </details>
+                    </div>
+
+                    <div class="block">
+                        Nun multipliziere in der Funktion <em>generate_event()</em> oberhalb des return Statements den
+                        Wert der Spalte <em>season</em> mit dem <em>drift</em>.
+                    </div>
+
+                    <div class="block">
+                        <details>
+                            <summary>Lösungsvorschlag</summary>
+                            <article>
+                                <pre><code>new_row['season'] = new_row['season']*drift</code></pre>
+                            </article>
+                        </details>
+                    </div>
+
+                    <div class="block">
+                        Lösche alle bereits gemachten Meldungen und Messungen.
+                    </div>
+
+                    <div class="block">
+                        <ul>
+                            <li>stoppe den Datengenerator und die Drift Pipeline</li>
+                            <li>lösche in der Redpanda Konsole alle Topics</li>
+                            <li><strong>speichere deine offenen Notebooks</strong></li>
+                            <li>stoppe alle Services (docker compose down)</li>
+                            <li>lösche den Ordner <em>state</em>, welchen die Drift Pipeline automatisch erstellt (im
+                                Verzeichnis, wo auch das Notebook bzw. Skript der Drift Pipeline liegt)</li>
+                            <li>optional: lösche das File <em>grafana_work/data/grafana.db</em> (löscht auch alle
+                                bisherigen Dashboards)</li>
+                            <li>starte die Services wieder</li>
+                        </ul>
+                    </div>
+
+                    <div class="block">
+                        Nun baust du in Grafana ein neues Dashboard, welches dir den Drift anzeigt. Zuerst generierst du
+                        Traffic, damit du
+                        in Grafana Metriken zum Auswählen hast.
+                    </div>
+
+                    <div class="block">
+                        Starte dazu zuerst die Drift Detection Pipeline.
+                    </div>
+
+                    <div class="block">
+                        Dann generiere Daten, zuerst etwa eine Minute lang ohne Drift:
+                    </div>
+
+                    <div class="block">
+                        <pre><code>docker compose run --rm --name=datagen --entrypoint=python3 development_env mushroom_datagen.py -b 10 -s 75 -r 5</code></pre>
+                    </div>
+
+                    <div class="block">
+                        Nun baust Du in Grafana das neue Dashboard, welches dir den Drift anzeigt. Als einfache Variante
+                        kannst du zwei Liniendiagramme machen, einmal für eine Spalte ohne Drift, und einmal für eine
+                        Spalte mit Drift.
+                    </div>
+
+                    <div class="block">
+                        Nun generiere Inferenz-Request mit Daten, welche einen Drift enthalten:
+                    </div>
+
+                    <div class="block">
+                        <pre><code>docker compose run --rm --name=datagen --entrypoint=python3 development_env mushroom_datagen.py -b 10 -s 75 -r 5 -d 2</code></pre>
+                    </div>
+
+                    <div class="block">
+                        Lasse dies wieder etwa eine Minute laufen, dann kannst du stoppen und den Drift auf 3 erhöhen.
+                    </div>
+
+                    <div class="block">
+                        Du solltest nun in Grafana beobachten können, wie die der Drift für die Spalte <em>season</em>
+                        zunimmt.
+                    </div>
+
+                    <h3 class="title is-3">Wrapup</h3>
+
+                    <div class="block">
+                        Du hast in dieser Übung eine Stream Processing Pipeline gebaut, welche Inferenz-Requests für
+                        unser Mushroom Modell auf Datendrift überwacht und die Ergebnisse an unsere Monitoring
+                        Infrastruktur meldet.
+                    </div>
+
+                    <div class="block">
+                        Dabei haben wir wiederum auch ein paar Abkürzungen genommen, was im Rahmen eines Kurses zwar
+                        vertretbar ist, deren wir uns daber auch bewusst sein sollten:
+                    </div>
+
+                    <div class="block">
+                        <ul>
+                            <li>Wir haben Evidently einen ganzen Report berechnen lassen, anstatt nur die Metrik,
+                                welche
+                                wir brauchen</li>
+                            <li>Wir haben uns nicht um Skalierbarkeit gekümmert. Mit unserem Aufbau und Quix ist die
+                                Pipeline jedoch bereits auf Skalierbarkeit ausgelegt.</li>
+                            <li>Unser Meldungsformat war sehr einfach und ohne jegliche Metadaten</li>
+                            <li>Unser Meldungsformat war ein einfaches json, ohne Schema und Validierung</li>
+                            <li>Einige Dinge haben wir hartkodiert bzw. nicht sauber entkoppelt (z.B. Feature Typen,
+                                Topic)</li>
+                            <li>Keine Tests, kein sauberes Error Handling</li>
+                        </ul>
+                    </div>
+
+                    <div class="block">
+                        Und inbesondere
+                    </div>
+
+                    <div class="block">
+                        Wir prüfen nur die Rohdaten auf Drift. Es ist selbstverständlich auch empfohlen, Features zu
+                        prüfen. Dies wird wichtiger, sobald die Anzahl von Features und Modellen zunimmt, und nur
+                        mit
+                        einem Feature Store sinnvoll umsetzbar.
+                    </div>
+
+
+                </div>
+            </div>
+        </div>
+    </section>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+    <!-- and it's easy to individually load additional languages -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/go.min.js"></script>
+</body>
+
+</html>

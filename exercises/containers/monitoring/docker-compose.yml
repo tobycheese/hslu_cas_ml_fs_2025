@@ -1,0 +1,38 @@
+services:
+  statsd:
+    container_name: statsd
+    image: prom/statsd-exporter
+    expose:
+    - 8125:8125/udp
+    ports:
+    - 127.0.0.1:9102:9102
+    command:
+    - --statsd.mapping-config=/metrics-mapping.yml
+    - --statsd.listen-udp=:8125
+    - --web.listen-address=:9102
+    volumes:
+    - ../../prometheus_config/statsd_metrics-mapping.yml:/metrics-mapping.yml
+    networks:
+    - production
+
+  prometheus:
+    container_name: prometheus
+    image: prom/prometheus
+    ports:
+      - 127.0.0.1:9090:9090 
+    volumes:
+      - ../../prometheus_config:/etc/prometheus
+    networks:
+      - production
+
+  grafana:
+    container_name: grafana
+    image: grafana/grafana-oss
+    ports:
+      - 127.0.0.1:3000:3000 
+    volumes:
+      - ../../grafana_work/etc:/etc/grafana/
+      - ../../grafana_work/data:/var/lib/grafana
+      - ../../grafana_work/dashboards:/opt/grafana/dashboards
+    networks:
+      - production

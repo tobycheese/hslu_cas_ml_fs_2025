@@ -1,0 +1,9 @@
+mappings:
+  # usage: drift_metrics.mushroom.v1.cap-diameter.wasserstein
+  - match: "drift_metrics.*.*.*.*"
+    name: "drift_metrics"
+    labels:
+        dataset_name: "$1"
+        dataset_version: "$2"
+        column_name: "$3"
+        metric_name: "$4"
